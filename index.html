@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>王者英语：无限同步版 (V8.0)</title>
+    <style>
+        :root { --primary-gold: #d4af37; --bg-dark: #0b1221; --accent-blue: #00bfff; --rank-red: #ff4500; }
+        * { box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; outline: none; }
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg-dark); color: #e0e0e0; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+        
+        /* 核心布局 */
+        .page { flex: 1; display: none; flex-direction: column; padding: 20px; overflow-y: auto; }
+        .page.active { display: flex; }
+        .status-bar { display: flex; justify-content: space-between; padding: 15px; background: rgba(0,0,0,0.6); border-bottom: 1px solid #333; }
+        
+        /* 按钮样式 */
+        .btn-gold { background: linear-gradient(180deg, #f0e68c, #d4af37); border: none; color: #4a3b00; font-weight: bold; padding: 12px; border-radius: 8px; width: 100%; margin-top: 10px; font-size: 16px; box-shadow: 0 4px 10px rgba(212, 175, 55, 0.3); }
+        .btn-blue { background: linear-gradient(180deg, #87cefa, #00bfff); color: #004a80; box-shadow: 0 4px 10px rgba(0, 191, 255, 0.3); }
+        
+        /* 首页大按钮 */
+        .main-btn { width: 160px; height: 160px; border-radius: 50%; border: 4px solid var(--primary-gold); margin: 20px auto 40px; display:flex; align-items:center; justify-content:center; flex-direction:column; box-shadow: 0 0 30px rgba(212, 175, 55, 0.2); background: radial-gradient(circle, #2a3b55 0%, #0b1221 70%); }
+        
+        /* 存档控制台 */
+        .sync-panel { background: rgba(255,255,255,0.05); border: 1px solid #444; padding: 15px; border-radius: 10px; margin-top: 20px; }
+        .sync-title { color: var(--accent-blue); font-size: 14px; margin-bottom: 10px; display: block; }
+        
+        /* 词汇卡片 */
+        .vocab-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
+        .vocab-card { background: rgba(255,255,255,0.05); border: 1px solid #333; padding: 15px 5px; text-align: center; border-radius: 6px; }
+        .vocab-card.wrong { border-color: var(--rank-red); background: rgba(255, 69, 0, 0.1); }
+        
+        /* 战斗选项 */
+        .option-btn { width: 100%; padding: 15px; margin-bottom: 12px; background: rgba(255,255,255,0.08); border: 1px solid #444; color: white; text-align: left; border-radius: 6px; font-size: 16px; }
+        .option-btn.correct { background: rgba(46, 204, 113, 0.3); border-color: #2ecc71; }
+        .option-btn.wrong { background: rgba(231, 76, 60, 0.3); border-color: #e74c3c; }
+
+        /* 弹窗 */
+        .modal { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); display:none; align-items:center; justify-content:center; z-index:999; }
+        .modal-content { background:#1a2233; padding:25px; border:2px solid var(--primary-gold); width:85%; max-width:400px; border-radius:12px; text-align:center; position:relative; }
+        textarea { width: 100%; height: 80px; background: #000; color: #0f0; border: 1px solid #333; padding: 10px; margin: 10px 0; font-family: monospace; font-size: 12px; resize: none; }
+    </style>
+</head>
+<body>
+
+    <!-- 状态栏 -->
+    <div class="status-bar">
+        <span>🏆 荣耀王者</span>
+        <span style="color:var(--primary-gold)">🪙 <span id="coin-display">0</span></span>
+    </div>
+
+    <!-- 1. 首页 -->
+    <div id="home-page" class="page active">
+        <div class="main-btn" onclick="startBattle()">
+            <span style="font-size:28px; font-weight:900; color:#fff; text-shadow:0 0 10px var(--primary-gold);">START</span>
+            <span style="font-size:12px; color:#888; margin-top:5px;">开始排位</span>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-bottom:20px;">
+            <button class="btn-gold" style="background:#222; color:#00bfff; border:1px solid #00bfff; margin:0;" onclick="switchPage('vocab-page')">📖 英雄图鉴</button>
+            <button class="btn-gold" style="background:#222; color:#ff4500; border:1px solid #ff4500; margin:0;" onclick="switchPage('armory-page')">🛡️ 装备库 <span id="wrong-count">(0)</span></button>
+        </div>
+
+        <!-- 同步控制台 -->
+        <div class="sync-panel">
+            <span class="sync-title">📡 跨设备同步 (无需联网)</span>
+            <div style="display:flex; gap:10px;">
+                <button class="btn-gold btn-blue" style="margin:0; font-size:14px;" onclick="exportSave()">📤 生成存档</button>
+                <button class="btn-gold btn-blue" style="margin:0; font-size:14px;" onclick="openImportModal()">📥 读取存档</button>
+            </div>
+            <p style="font-size:10px; color:#666; margin-top:8px;">* 电脑点“生成”，发微信给手机，手机点“读取”粘贴即可。</p>
+        </div>
+    </div>
+
+    <!-- 2. 战斗页 -->
+    <div id="battle-page" class="page">
+        <div style="display:flex; justify-content:space-between; margin-bottom:20px;">
+            <span style="color:#888">关卡: <span id="q-idx">1</span>/5</span>
+            <span style="color:var(--rank-red)">❤️ <span id="hp">3</span></span>
+        </div>
+        <div id="q-box" style="background:rgba(0,0,0,0.3); padding:30px 20px; margin-bottom:30px; text-align:center; border:1px solid var(--accent-blue); border-radius:8px; font-size:22px; font-weight:bold;">...</div>
+        <div id="opt-box"></div>
+    </div>
+
+    <!-- 3. 图鉴 & 错题 -->
+    <div id="vocab-page" class="page">
+        <button class="btn-gold" style="margin-bottom:15px; padding:8px;" onclick="switchPage('home-page')">🔙 返回大厅</button>
+        <div id="vocab-list" class="vocab-grid"></div>
+    </div>
+    <div id="armory-page" class="page">
+        <button class="btn-gold" style="margin-bottom:15px; padding:8px;" onclick="switchPage('home-page')">🔙 返回大厅</button>
+        <div id="armory-list" class="vocab-grid"></div>
+    </div>
+
+    <!-- 存档弹窗 -->
+    <div id="save-modal" class="modal" onclick="closeModal()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <h3 id="modal-title" style="color:var(--primary-gold); margin-top:0;">存档代码</h3>
+            <p id="modal-desc" style="font-size:12px; color:#aaa;">复制下方代码，发送到另一台设备</p>
+            <textarea id="save-code-area" readonly></textarea>
+            <button id="modal-action-btn" class="btn-gold" onclick="copySave()">复制并关闭</button>
+        </div>
+    </div>
+
+    <!-- 详情弹窗 -->
+    <div id="detail-modal" class="modal" onclick="document.getElementById('detail-modal').style.display='none'">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <h2 id="m-word" style="color:var(--primary-gold)"></h2>
+            <p id="m-mean" style="color:#fff; font-size:18px; margin:10px 0;"></p>
+            <div style="background:#000; padding:10px; border-radius:4px; text-align:left;">
+                <span style="color:#00bfff; font-size:12px;">例句：</span><br>
+                <span id="m-sent" style="color:#ccc; font-size:14px;"></span>
+            </div>
+            <button class="btn-gold" onclick="speakCurrent()">🔊 发音</button>
+        </div>
+    </div>
+
+    <script>
+        // --- 核心数据 ---
+        const vocabDB = [
+            { id: 1, word: "billion", meaning: "n. 十亿", sentence: "China has a population of over 1.4 billion." },
+            { id: 2, word: "native", meaning: "adj. 本地的", sentence: "She is a native speaker." },
+            { id: 3, word: "attitude", meaning: "n. 态度", sentence: "Good attitude is important." },
+            { id: 4, word: "system", meaning: "n. 系统", sentence: "The system is down." },
+            { id: 5, word: "despite", meaning: "prep. 尽管", sentence: "He came despite the rain." },
+            { id: 6, word: "symbol", meaning: "n. 符号", sentence: "Dragon is a symbol of power." },
+            { id: 7, word: "dynasty", meaning: "n. 朝代", sentence: "The Tang Dynasty." },
+            { id: 8, word: "major", meaning: "adj. 主要的", sentence: "Safety is a major concern." }
+        ];
+
+        let coins = parseInt(localStorage.getItem('coins')) || 0;
+        let wrongIDs = JSON.parse(localStorage.getItem('wrongIDs')) || [];
+        let currentWord = null;
+
+        // --- 初始化 ---
+        window.onload = function() {
+            updateUI();
+        };
+
+        function updateUI() {
+            document.getElementById('coin-display').innerText = coins;
+            document.getElementById('wrong-count').innerText = `(${wrongIDs.length})`;
+        }
+
+        function saveData() {
+            localStorage.setItem('coins', coins);
+            localStorage.setItem('wrongIDs', JSON.stringify(wrongIDs));
+            updateUI();
+        }
+
+        // --- 存档系统 (核心黑科技) ---
+        function exportSave() {
+            // 生成存档数据：Base64编码防止乱码
+            const data = JSON.stringify({ c: coins, w: wrongIDs, t: Date.now() });
+            const code = btoa(encodeURIComponent(data)); // 编码
+            
+            document.getElementById('modal-title').innerText = "📤 你的存档码";
+            document.getElementById('modal-desc').innerText = "全选复制下方代码，发给微信文件传输助手";
+            const area = document.getElementById('save-code-area');
+            area.value = code;
+            area.readOnly = true;
+            
+            const btn = document.getElementById('modal-action-btn');
+            btn.innerText = "复制";
+            btn.onclick = copySave;
+            
+            document.getElementById('save-modal').style.display = 'flex';
+        }
+
+        function openImportModal() {
+            document.getElementById('modal-title').innerText = "📥 读取存档";
+            document.getElementById('modal-desc').innerText = "将另一台设备的存档码粘贴到下方";
+            const area = document.getElementById('save-code-area');
+            area.value = "";
+            area.readOnly = false;
+            area.placeholder = "在此粘贴代码...";
+            
+            const btn = document.getElementById('modal-action-btn');
+            btn.innerText = "确认读取";
+            btn.onclick = importSave;
+            
+            document.getElementById('save-modal').style.display = 'flex';
+        }
+
+        function copySave() {
+            const area = document.getElementById('save-code-area');
+            area.select();
+            document.execCommand('copy');
+            alert("已复制！快去发送给另一台设备吧。");
+            closeModal();
+        }
+
+        function importSave() {
+            const code = document.getElementById('save-code-area').value.trim();
+            if(!code) return alert("请输入存档码");
+            
+            try {
+                const dataStr = decodeURIComponent(atob(code));
+                const data = JSON.parse(dataStr);
+                
+                if(confirm(`检测到存档：\n金币：${data.c}\n错题数：${data.w.length}\n\n是否覆盖当前进度？`)) {
+                    coins = data.c;
+                    wrongIDs = data.w;
+                    saveData();
+                    alert("✅ 同步成功！");
+                    closeModal();
+                }
+            } catch(e) {
+                alert("❌ 无效的存档码，请重新复制");
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('save-modal').style.display = 'none';
+        }
+
+        // --- 游戏逻辑 ---
+        let qIdx = 0, hp = 3;
+
+        function switchPage(pid) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.getElementById(pid).classList.add('active');
+            if(pid === 'vocab-page') renderVocab();
+            if(pid === 'armory-page') renderArmory();
+        }
+
+        function startBattle() {
+            // 激活音频
+            try { const u = new SpeechSynthesisUtterance(''); window.speechSynthesis.speak(u); } catch(e){}
+            qIdx = 0; hp = 3;
+            document.getElementById('hp').innerText = hp;
+            switchPage('battle-page');
+            nextQ();
+        }
+
+        function nextQ() {
+            if(qIdx >= 5) {
+                alert("🎉 胜利！金币 +50");
+                coins += 50;
+                saveData();
+                switchPage('home-page');
+                return;
+            }
+            document.getElementById('q-idx').innerText = qIdx + 1;
+            
+            // 随机出题
+            const target = vocabDB[Math.floor(Math.random()*vocabDB.length)];
+            let opts = [target];
+            while(opts.length < 4) {
+                let r = vocabDB[Math.floor(Math.random()*vocabDB.length)];
+                if(!opts.includes(r)) opts.push(r);
+            }
+            opts.sort(()=>Math.random()-0.5);
+            
+            document.getElementById('q-box').innerText = target.word;
+            const box = document.getElementById('opt-box');
+            box.innerHTML = '';
+            
+            opts.forEach(o => {
+                const btn = document.createElement('button');
+                btn.className = 'option-btn';
+                btn.innerText = o.meaning;
+                btn.onclick = () => {
+                    if(o.id === target.id) {
+                        btn.classList.add('correct');
+                        speakWord("Good");
+                        setTimeout(()=>{ qIdx++; nextQ(); }, 600);
+                    } else {
+                        btn.classList.add('wrong');
+                        hp--;
+                        document.getElementById('hp').innerText = hp;
+                        if(!wrongIDs.includes(target.id)) {
+                            wrongIDs.push(target.id);
+                            saveData();
+                        }
+                        speakWord("Wrong");
+                        if(hp<=0) { alert("💔 失败"); switchPage('home-page'); }
+                    }
+                }
+                box.appendChild(btn);
+            });
+        }
+
+        // --- 渲染与发音 ---
+        function renderVocab() {
+            const div = document.getElementById('vocab-list');
+            div.innerHTML = '';
+            vocabDB.forEach(v => {
+                const el = document.createElement('div');
+                el.className = 'vocab-card';
+                el.innerHTML = `<b>${v.word}</b><br><span style="font-size:12px">${v.meaning}</span>`;
+                el.onclick = () => showDetail(v);
+                div.appendChild(el);
+            });
+        }
+
+        function renderArmory() {
+            const div = document.getElementById('armory-list');
+            div.innerHTML = '';
+            if(wrongIDs.length === 0) div.innerHTML = '<p style="text-align:center;width:100%;color:#666">暂无错题</p>';
+            wrongIDs.forEach(id => {
+                const v = vocabDB.find(x => x.id === id);
+                if(v) {
+                    const el = document.createElement('div');
+                    el.className = 'vocab-card wrong';
+                    el.innerHTML = `<b>${v.word}</b><br><span style="font-size:12px">${v.meaning}</span>`;
+                    el.onclick = () => showDetail(v);
+                    div.appendChild(el);
+                }
+            });
+        }
+
+        function showDetail(v) {
+            currentWord = v;
+            document.getElementById('m-word').innerText = v.word;
+            document.getElementById('m-mean').innerText = v.meaning;
+            document.getElementById('m-sent').innerText = v.sentence;
+            document.getElementById('detail-modal').style.display = 'flex';
+        }
+
+        function speakCurrent() { if(currentWord) speakWord(currentWord.word); }
+        function speakWord(txt) {
+            const u = new SpeechSynthesisUtterance(txt);
+            u.lang = 'en-US';
+            window.speechSynthesis.speak(u);
+        }
+    </script>
+</body>
+</html>
